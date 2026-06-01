@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PhotogRalph Tennis Team Manager
 
-## Getting Started
+## Overview
+A web application for managing tennis practice sessions and player development for kids from beginner level onward. Built with Next.js 15, TypeScript, Tailwind CSS v4, and Supabase.
 
-First, run the development server:
+## Live URL
+- https://tennis.photogralph.com (via Cloudflare Tunnel)
 
+## Local Dev
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd /Users/ralph/tennis-workspace/apps/tennis-team-manager
+npm install
+npm run dev        # runs on localhost:3040
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment Variables
+Copy `.env.local.example` to `.env.local` and fill in your Supabase credentials:
+```
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+If Supabase credentials are not available, the app runs in **Dev/Mock Mode** with full UI and demo data.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## User Roles
+1. Owner/Admin - Full control
+2. Coach - Practices, attendance, assessments
+3. Parent/Guardian - View own child only
+4. Assistant Coach/Volunteer - Limited attendance
+5. Read-only Family Viewer
 
-## Learn More
+## Features
+- Dashboard with stats and quick actions
+- Player roster with search, filters, CSV import/export
+- Player profiles with attendance, progress, assessments
+- Skill assessment system (1-5 ratings, 16 skills)
+- Tennis development pathway (Red/Orange/Green/Yellow)
+- Practice session scheduling and attendance
+- Practice plan builder with original drills
+- Progress reports (print-friendly)
+- Parent portal (privacy-first)
+- Communication center (announcements)
+- Groups/classes management
+- Badges and motivation
+- Admin settings
+- AI-assisted practice plan and report drafting
 
-To learn more about Next.js, take a look at the following resources:
+## Safety & Privacy
+- No direct coach-to-child messaging
+- All communication goes to parents
+- Minimal child data storage
+- Emergency contacts, allergy/medical notes with restricted visibility
+- Consent tracking for photos, videos, medical emergency authorization
+- Audit logs for sensitive changes
+- Soft delete/archive for players
+- Row Level Security on all data
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Cloudflare Tunnel
+The tunnel config is at `/Users/ralph/.cloudflared/tennis-config.yml`. Start with:
+```bash
+cloudflared tunnel --config /Users/ralph/.cloudflared/tennis-config.yml run TENNIS_TUNNEL_ID
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Architecture
+- Next.js App Router (src/app)
+- Supabase for auth, database, storage
+- Tailwind CSS v4 for styling
+- Lucide React for icons
+- Recharts for charts
+- date-fns for date formatting
+- Mock data layer for offline dev mode
+- Role-based access control via React Context
 
-## Deploy on Vercel
+## Data Model
+Supabase tables: users, profiles, roles, children, guardians, player_guardians, groups, coaches, sessions, session_attendance, skill_assessments, skill_assessment_items, progress_reports, announcements, messages, message_recipients, consents, badges, player_badges, practice_plans, drills, locations, audit_logs, app_settings.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Testing
+Manual QA checklist in `/qa-checklist.md`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+MIT (for family use)
