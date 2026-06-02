@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { Loader2, AlertCircle, ArrowRight } from "lucide-react";
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const { login, user } = useAuth();
   const { showToast } = useData();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,6 +29,32 @@ export default function LoginPage() {
   if (typeof window !== "undefined" && user) {
     router.replace("/dashboard");
   }
+
+  // ?demo=1 or ?demo=coach|admin|parent|assistant auto-logs in.
+  // Used for stakeholder demos and shareable links: /login?demo=1
+  // drops the viewer straight into the coach dashboard. The page also
+  // supports ?redirect=/some/path to land on a specific page after login.
+  useEffect(() => {
+    if (user || loading) return;
+    const demo = searchParams.get("demo");
+    if (!demo) return;
+    const target = demo === "1" || demo === "true"
+      ? "coach@photogralph.com"
+      : `${demo}@photogralph.com`;
+    if (!DEMO_ACCOUNTS.some((a) => a.email === target)) return;
+    setLoading(true);
+    setError("");
+    (async () => {
+      const result = await login(target, "password");
+      if (result.error) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
+      const next = searchParams.get("redirect") || "/dashboard";
+      router.push(next);
+    })();
+  }, [searchParams, user, loading, login, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +167,10 @@ export default function LoginPage() {
           </div>
           <p className="text-[10px] text-center text-slate-400 mt-3">
             Demo accounts require a seeded database. Run <code className="bg-slate-100 px-1 rounded">POST /api/seed</code> first if not available.
+            <br />
+            <span className="block mt-1">
+              Quick login link: <code className="bg-slate-100 px-1 rounded">/login?demo=1</code>
+            </span>
           </p>
         </div>
       </div>
