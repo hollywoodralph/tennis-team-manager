@@ -129,7 +129,7 @@ export default function MarketingHome() {
   }, [user, isLoading, hydrated, router]);
 
   const handleDemoLogin = async (email: string) => {
-    await login(email, "password", "demo");
+    await login(email, "password");
     router.push("/dashboard");
   };
 

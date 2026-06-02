@@ -47,10 +47,10 @@ export default function PaymentsPage() {
   // For parents, only show their children
   const visiblePlayers = useMemo(() => {
     if (isParent) {
-      return players.filter((p) => p.status === "active" && (user?.child_ids ?? []).includes(p.id));
+      return players.filter((p) => p.status === "active" && (user?.childIds ?? []).includes(p.id));
     }
     return players.filter((p) => p.status === "active");
-  }, [players, isParent, user?.child_ids]);
+  }, [players, isParent, user?.childIds]);
 
   const [editing, setEditing] = useState<{ playerId: string; fee: number; paid: boolean; lastPaidDate: string | null } | null>(null);
   const [reminder, setReminder] = useState<{ playerId: string; playerName: string; guardianEmail: string | null } | null>(null);

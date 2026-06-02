@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { 
-  LayoutDashboard, Users, CalendarDays, Calendar, ClipboardList, Sparkles, Trophy, Megaphone, Settings, ShieldCheck, LogOut, X, Menu, HeartHandshake, DollarSign, FileText
+  LayoutDashboard, Users, CalendarDays, Calendar, ClipboardList, Sparkles, Trophy, Megaphone, Settings, ShieldCheck, LogOut, X, Menu, HeartHandshake, DollarSign, FileText, MessageCircle
 } from "lucide-react";
 
 const adminLinks = [
@@ -19,6 +19,7 @@ const adminLinks = [
   { label: "Groups", href: "/groups", icon: Users },
   { label: "Reports", href: "/progress-reports", icon: FileText },
   { label: "Badges", href: "/badges", icon: ShieldCheck },
+  { label: "Messages", href: "/messages", icon: MessageCircle },
   { label: "Communication", href: "/communication", icon: Megaphone },
   { label: "Payments", href: "/payments", icon: DollarSign },
   { label: "Settings", href: "/settings", icon: Settings },

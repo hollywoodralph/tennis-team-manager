@@ -283,13 +283,12 @@ function TakeAttendanceModal({
   };
 
   const handleSave = () => {
-    const payload: Omit<AttendanceRecord, "id" | "created_at">[] = groupPlayers.map((p) => ({
-      session_id: session.id,
+    const payload = groupPlayers.map((p) => ({
       player_id: p.id,
       status: records.get(p.id) || "present",
       parent_notified: false,
     }));
-    saveAttendance(payload);
+    saveAttendance(session.id, payload);
     onClose();
   };
 

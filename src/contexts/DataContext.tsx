@@ -13,9 +13,18 @@ import {
   DEMO_PROGRESS_REPORTS, BADGE_DEFINITIONS, DEMO_PAYMENTS,
 } from "@/lib/mockData";
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
+const LS_KEY = "tennis_data_v1";
+
+const DEFAULT_SETTINGS: AppSettings = {
+  organization_name: "PhotogRalph Tennis Academy",
+  primary_color: "#16a34a",
+  locations: ["Main Court", "Court 2", "Court 3", "Indoor Facility"],
+  consent_photo_text: "I consent to photos of my child being used for promotional purposes.",
+  consent_video_text: "I consent to videos of my child being used for promotional purposes.",
+  consent_medical_text: "I consent to emergency medical treatment if necessary.",
+};
+
+/* --------- DataContext talks to the API, falls back to localStorage --------- */
 
 export interface DataState {
   players: Player[];
@@ -30,81 +39,6 @@ export interface DataState {
   payments: Record<string, PaymentRecord>;
 }
 
-export interface DataActions {
-  /* Players */
-  addPlayer: (player: Omit<Player, "id" | "created_at" | "updated_at">) => Player;
-  updatePlayer: (id: string, patch: Partial<Player>) => void;
-  deletePlayer: (id: string) => void;
-  /* Sessions */
-  addSession: (session: Omit<Session, "id" | "created_at">) => Session;
-  updateSession: (id: string, patch: Partial<Session>) => void;
-  deleteSession: (id: string) => void;
-  /* Attendance */
-  saveAttendance: (records: Omit<AttendanceRecord, "id" | "created_at">[]) => void;
-  /* Assessments */
-  addAssessment: (assessment: Omit<SkillAssessment, "id" | "created_at">) => SkillAssessment;
-  deleteAssessment: (id: string) => void;
-  /* Announcements */
-  addAnnouncement: (announcement: Omit<Announcement, "id" | "sent_at" | "read_count">) => Announcement;
-  /* Badges */
-  awardBadge: (badge: Omit<PlayerBadge, "id" | "awarded_at">) => PlayerBadge;
-  /* Settings */
-  updateSettings: (patch: Partial<AppSettings>) => void;
-  /* Reports */
-  addProgressReport: (report: Omit<ProgressReport, "id" | "created_at">) => ProgressReport;
-  /* Groups */
-  addGroup: (group: Omit<Group, "id">) => Group;
-  deleteGroup: (id: string) => void;
-  /* Payments */
-  updatePayment: (playerId: string, record: PaymentRecord) => void;
-  markPaymentPaid: (playerId: string, monthlyFee: number) => void;
-  /* Reset */
-  resetToDefaults: () => void;
-}
-
-interface ToastMessage {
-  id: string;
-  message: string;
-  type: "success" | "error" | "info";
-  undo?: {
-    label: string;
-    onUndo: () => void;
-  };
-}
-
-interface ToastCtx {
-  toasts: ToastMessage[];
-  showToast: (message: string, type?: "success" | "error" | "info", undo?: ToastMessage["undo"]) => void;
-  removeToast: (id: string) => void;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-const LS_KEY = "tennis_data_v1";
-
-function genId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-}
-
-function getTodayIso() {
-  return new Date().toISOString().split("T")[0];
-}
-
-function getNowIso() {
-  return new Date().toISOString();
-}
-
-const DEFAULT_SETTINGS: AppSettings = {
-  organization_name: "PhotogRalph Tennis Academy",
-  primary_color: "#16a34a",
-  locations: ["Main Court", "Court 2", "Court 3", "Indoor Facility"],
-  consent_photo_text: "I consent to photos of my child being used for promotional purposes.",
-  consent_video_text: "I consent to videos of my child being used for promotional purposes.",
-  consent_medical_text: "I consent to emergency medical treatment if necessary.",
-};
-
 const DEFAULT_STATE: DataState = {
   players: DEMO_PLAYERS,
   groups: DEMO_GROUPS,
@@ -117,6 +51,33 @@ const DEFAULT_STATE: DataState = {
   settings: DEFAULT_SETTINGS,
   payments: DEMO_PAYMENTS,
 };
+
+// Try API, fall back to localStorage. Each collection is independent.
+async function tryApi<T>(endpoint: string, fallback: T): Promise<{ data: T; usingApi: boolean }> {
+  try {
+    const res = await fetch(endpoint, { credentials: "include" });
+    if (!res.ok) throw new Error(`API ${endpoint} returned ${res.status}`);
+    const data = await res.json();
+    return { data: extractData(data, fallback), usingApi: true };
+  } catch {
+    return { data: fallback, usingApi: false };
+  }
+}
+
+function extractData<T>(apiResponse: any, fallback: T): T {
+  // API responses wrap data in {players: [...]}, {sessions: [...]}, etc.
+  // Heuristic: take the first array-valued key, or the first property value
+  if (Array.isArray(apiResponse)) return apiResponse as any as T;
+  if (apiResponse && typeof apiResponse === "object") {
+    const keys = Object.keys(apiResponse);
+    for (const k of keys) {
+      const v = apiResponse[k];
+      if (Array.isArray(v)) return v as any as T;
+      if (v && typeof v === "object" && !Array.isArray(v)) return v as any as T;
+    }
+  }
+  return fallback;
+}
 
 function loadState(): DataState {
   if (typeof window === "undefined") return DEFAULT_STATE;
@@ -143,14 +104,49 @@ function loadState(): DataState {
 
 function saveState(state: DataState) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LS_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  } catch {}
 }
 
-/* ------------------------------------------------------------------ */
-/*  Contexts                                                           */
-/* ------------------------------------------------------------------ */
+/* ----------------- Toast system ----------------- */
 
-const DataContext = createContext<DataState & DataActions & ToastCtx | null>(null);
+interface ToastMessage {
+  id: string;
+  message: string;
+  type: "success" | "error" | "info";
+  undo?: { label: string; onUndo: () => void };
+}
+
+interface ToastCtx {
+  toasts: ToastMessage[];
+  showToast: (message: string, type?: "success" | "error" | "info", undo?: ToastMessage["undo"]) => void;
+  removeToast: (id: string) => void;
+}
+
+export interface DataActions {
+  addPlayer: (player: Omit<Player, "id" | "created_at" | "updated_at">) => Promise<Player>;
+  updatePlayer: (id: string, patch: Partial<Player>) => Promise<void>;
+  deletePlayer: (id: string) => Promise<void>;
+  addSession: (session: Omit<Session, "id" | "created_at">) => Promise<Session>;
+  updateSession: (id: string, patch: Partial<Session>) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
+  saveAttendance: (sessionId: string, records: Omit<AttendanceRecord, "id" | "created_at" | "session_id">[]) => Promise<void>;
+  addAssessment: (assessment: Omit<SkillAssessment, "id" | "created_at">) => Promise<SkillAssessment>;
+  deleteAssessment: (id: string) => Promise<void>;
+  addAnnouncement: (announcement: Omit<Announcement, "id" | "sent_at" | "read_count">) => Promise<Announcement>;
+  awardBadge: (badge: Omit<PlayerBadge, "id" | "awarded_at">) => Promise<PlayerBadge>;
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
+  addProgressReport: (report: Omit<ProgressReport, "id" | "created_at">) => Promise<ProgressReport>;
+  addGroup: (group: Omit<Group, "id">) => Promise<Group>;
+  deleteGroup: (id: string) => Promise<void>;
+  updatePayment: (playerId: string, record: PaymentRecord) => Promise<void>;
+  markPaymentPaid: (playerId: string, monthlyFee: number) => Promise<void>;
+  resetToDefaults: () => void;
+  refresh: () => Promise<void>;
+}
+
+const DataContext = createContext<(DataState & DataActions & ToastCtx) | null>(null);
 
 export function useData() {
   const ctx = useContext(DataContext);
@@ -158,20 +154,71 @@ export function useData() {
   return ctx;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Provider                                                           */
-/* ------------------------------------------------------------------ */
+function genId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function getNowIso() {
+  return new Date().toISOString();
+}
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DataState>(loadState);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [usingApi, setUsingApi] = useState(false);
 
-  /* Persist on every change */
+  // Persist to localStorage on every change (also acts as cache when API is down)
+  useEffect(() => { saveState(state); }, [state]);
+
+  // Try to load from API on mount
   useEffect(() => {
-    saveState(state);
-  }, [state]);
+    (async () => {
+      // Quick auth check first
+      let authenticated = false;
+      try {
+        const meRes = await fetch("/api/auth/me", { credentials: "include" });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          authenticated = !!me.user;
+        }
+      } catch {}
 
-  /* Toast helpers */
+      if (!authenticated) {
+        // Stay on localStorage data; do nothing
+        return;
+      }
+
+      // User is logged in — fetch from API
+      try {
+        const [p, g, s, a, as, an, b, pay] = await Promise.all([
+          fetch("/api/players", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/payments", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/sessions", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/attendance", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/assessments", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/announcements", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/badges", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+          fetch("/api/payments", { credentials: "include" }).then((r) => r.json()).catch(() => ({})),
+        ]);
+        // Only overwrite if we got data
+        if (p?.players || s?.sessions) {
+          setUsingApi(true);
+          setState((prev) => ({
+            ...prev,
+            players: p?.players || prev.players,
+            sessions: s?.sessions || prev.sessions,
+            attendance: a?.records || prev.attendance,
+            assessments: as?.assessments || prev.assessments,
+            announcements: an?.announcements || prev.announcements,
+            playerBadges: b?.awarded || prev.playerBadges,
+            payments: pay?.payments || prev.payments,
+          }));
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // --- Toast helpers ---
   const showToast = useCallback(
     (message: string, type: ToastMessage["type"] = "info", undo?: ToastMessage["undo"]) => {
       const id = genId("toast");
@@ -187,13 +234,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  /* Restore a deleted entity (used by Undo button) */
   const restoreSnapshot = useCallback((snapshot: Partial<DataState>) => {
     setState((prev) => ({ ...prev, ...snapshot }));
   }, []);
 
-  /* --- Players --- */
-  const addPlayer = useCallback((player: Omit<Player, "id" | "created_at" | "updated_at">) => {
+  // --- Players ---
+  const addPlayer = useCallback(async (player: Omit<Player, "id" | "created_at" | "updated_at">) => {
     const newPlayer: Player = {
       ...player,
       id: genId("player"),
@@ -201,11 +247,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       updated_at: getNowIso(),
     } as Player;
     setState((prev) => ({ ...prev, players: [...prev.players, newPlayer] }));
+    // Fire-and-forget API call
+    fetch("/api/players", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(player),
+    }).catch(() => {});
     showToast(`${newPlayer.first_name} ${newPlayer.last_name} added to roster`, "success");
     return newPlayer;
   }, [showToast]);
 
-  const updatePlayer = useCallback((id: string, patch: Partial<Player>) => {
+  const updatePlayer = useCallback(async (id: string, patch: Partial<Player>) => {
     setState((prev) => ({
       ...prev,
       players: prev.players.map((p) => (p.id === id ? { ...p, ...patch, updated_at: getNowIso() } : p)),
@@ -213,7 +266,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     showToast("Player updated", "success");
   }, [showToast]);
 
-  const deletePlayer = useCallback((id: string) => {
+  const deletePlayer = useCallback(async (id: string) => {
     const snapshot = {
       players: state.players,
       attendance: state.attendance,
@@ -237,19 +290,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [showToast, state.players, state.attendance, state.assessments, state.playerBadges, state.progressReports, restoreSnapshot]);
 
-  /* --- Sessions --- */
-  const addSession = useCallback((session: Omit<Session, "id" | "created_at">) => {
+  // --- Sessions ---
+  const addSession = useCallback(async (session: Omit<Session, "id" | "created_at">) => {
     const newSession: Session = {
       ...session,
       id: genId("sess"),
       created_at: getNowIso(),
     } as Session;
     setState((prev) => ({ ...prev, sessions: [...prev.sessions, newSession] }));
+    fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(session),
+    }).catch(() => {});
     showToast(`Session "${newSession.title}" scheduled`, "success");
     return newSession;
   }, [showToast]);
 
-  const updateSession = useCallback((id: string, patch: Partial<Session>) => {
+  const updateSession = useCallback(async (id: string, patch: Partial<Session>) => {
     setState((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -257,7 +316,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     showToast("Session updated", "success");
   }, [showToast]);
 
-  const deleteSession = useCallback((id: string) => {
+  const deleteSession = useCallback(async (id: string) => {
     const snapshot = { sessions: state.sessions, attendance: state.attendance };
     setState((prev) => ({
       ...prev,
@@ -270,41 +329,52 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [showToast, state.sessions, state.attendance, restoreSnapshot]);
 
-  /* --- Attendance --- */
-  const saveAttendance = useCallback((records: Omit<AttendanceRecord, "id" | "created_at">[]) => {
+  // --- Attendance ---
+  const saveAttendance = useCallback(async (sessionId: string, records: Omit<AttendanceRecord, "id" | "created_at" | "session_id">[]) => {
     setState((prev) => {
-      const withoutExisting = prev.attendance.filter(
-        (a) => !records.some((r) => r.session_id === a.session_id && r.player_id === a.player_id)
-      );
+      const withoutExisting = prev.attendance.filter((a) => a.session_id !== sessionId);
       const newRecords: AttendanceRecord[] = records.map((r) => ({
         ...r,
         id: genId("att"),
+        session_id: sessionId,
         created_at: getNowIso(),
       }));
       return { ...prev, attendance: [...withoutExisting, ...newRecords] };
     });
+    fetch("/api/attendance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ sessionId, records }),
+    }).catch(() => {});
     showToast("Attendance saved", "success");
   }, [showToast]);
 
-  /* --- Assessments --- */
-  const addAssessment = useCallback((assessment: Omit<SkillAssessment, "id" | "created_at">) => {
+  // --- Assessments ---
+  const addAssessment = useCallback(async (assessment: Omit<SkillAssessment, "id" | "created_at">) => {
     const newAssessment: SkillAssessment = {
       ...assessment,
       id: genId("assess"),
       created_at: getNowIso(),
     } as SkillAssessment;
     setState((prev) => ({ ...prev, assessments: [...prev.assessments, newAssessment] }));
+    fetch("/api/assessments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(assessment),
+    }).catch(() => {});
     showToast("Assessment recorded", "success");
     return newAssessment;
   }, [showToast]);
 
-  const deleteAssessment = useCallback((id: string) => {
+  const deleteAssessment = useCallback(async (id: string) => {
     setState((prev) => ({ ...prev, assessments: prev.assessments.filter((a) => a.id !== id) }));
     showToast("Assessment deleted", "info");
   }, [showToast]);
 
-  /* --- Announcements --- */
-  const addAnnouncement = useCallback((announcement: Omit<Announcement, "id" | "sent_at" | "read_count">) => {
+  // --- Announcements ---
+  const addAnnouncement = useCallback(async (announcement: Omit<Announcement, "id" | "sent_at" | "read_count">) => {
     const newAnn: Announcement = {
       ...announcement,
       id: genId("ann"),
@@ -312,31 +382,43 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       read_count: 0,
     };
     setState((prev) => ({ ...prev, announcements: [newAnn, ...prev.announcements] }));
+    fetch("/api/announcements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(announcement),
+    }).catch(() => {});
     showToast("Announcement sent", "success");
     return newAnn;
   }, [showToast]);
 
-  /* --- Badges --- */
-  const awardBadge = useCallback((badge: Omit<PlayerBadge, "id" | "awarded_at">) => {
+  // --- Badges ---
+  const awardBadge = useCallback(async (badge: Omit<PlayerBadge, "id" | "awarded_at">) => {
     const newBadge: PlayerBadge = {
       ...badge,
       id: genId("pb"),
       awarded_at: getNowIso(),
     };
     setState((prev) => ({ ...prev, playerBadges: [...prev.playerBadges, newBadge] }));
+    fetch("/api/badges", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(badge),
+    }).catch(() => {});
     const def = BADGE_DEFINITIONS.find((b) => b.id === badge.badge_id);
     showToast(`${def?.name ?? "Badge"} awarded!`, "success");
     return newBadge;
   }, [showToast]);
 
-  /* --- Settings --- */
-  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+  // --- Settings ---
+  const updateSettings = useCallback(async (patch: Partial<AppSettings>) => {
     setState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
     showToast("Settings saved", "success");
   }, [showToast]);
 
-  /* --- Reports --- */
-  const addProgressReport = useCallback((report: Omit<ProgressReport, "id" | "created_at">) => {
+  // --- Reports ---
+  const addProgressReport = useCallback(async (report: Omit<ProgressReport, "id" | "created_at">) => {
     const newReport: ProgressReport = {
       ...report,
       id: genId("report"),
@@ -347,15 +429,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return newReport;
   }, [showToast]);
 
-  /* --- Groups --- */
-  const addGroup = useCallback((group: Omit<Group, "id">) => {
+  // --- Groups ---
+  const addGroup = useCallback(async (group: Omit<Group, "id">) => {
     const newGroup: Group = { ...group, id: genId("group") };
     setState((prev) => ({ ...prev, groups: [...prev.groups, newGroup] }));
     showToast(`Group "${newGroup.name}" created`, "success");
     return newGroup;
   }, [showToast]);
 
-  const deleteGroup = useCallback((id: string) => {
+  const deleteGroup = useCallback(async (id: string) => {
     const snapshot = { groups: state.groups };
     setState((prev) => ({ ...prev, groups: prev.groups.filter((g) => g.id !== id) }));
     showToast("Group deleted", "info", {
@@ -364,27 +446,61 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [showToast, state.groups, restoreSnapshot]);
 
-  /* --- Payments --- */
-  const updatePayment = useCallback((playerId: string, record: PaymentRecord) => {
+  // --- Payments ---
+  const updatePayment = useCallback(async (playerId: string, record: PaymentRecord) => {
     setState((prev) => ({ ...prev, payments: { ...prev.payments, [playerId]: record } }));
+    fetch("/api/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        playerId,
+        monthlyFee: record.monthlyFee,
+        paid: record.paid,
+        lastPaidDate: record.lastPaidDate,
+      }),
+    }).catch(() => {});
   }, []);
 
-  const markPaymentPaid = useCallback((playerId: string, monthlyFee: number) => {
+  const markPaymentPaid = useCallback(async (playerId: string, monthlyFee: number) => {
+    const today = new Date().toISOString().split("T")[0];
     setState((prev) => ({
       ...prev,
       payments: {
         ...prev.payments,
-        [playerId]: { monthlyFee, paid: true, lastPaidDate: new Date().toISOString().split("T")[0] },
+        [playerId]: { monthlyFee, paid: true, lastPaidDate: today },
       },
     }));
+    fetch("/api/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ playerId, monthlyFee, paid: true, lastPaidDate: today }),
+    }).catch(() => {});
     showToast("Payment marked as paid", "success");
   }, [showToast]);
 
-  /* --- Reset --- */
+  // --- Reset ---
   const resetToDefaults = useCallback(() => {
     setState(DEFAULT_STATE);
     showToast("All data reset to defaults", "info");
   }, [showToast]);
+
+  const refresh = useCallback(async () => {
+    // Re-fetch from API (no-op if not authenticated)
+    try {
+      const [p, s, a, as, an, b, pay] = await Promise.all([
+        fetch("/api/players", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/sessions", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/attendance", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/assessments", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/announcements", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/badges", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+        fetch("/api/payments", { credentials: "include" }).then((r) => r.json()).catch(() => null),
+      ]);
+      if (p) setState((prev) => ({ ...prev, players: p.players || prev.players }));
+    } catch {}
+  }, []);
 
   const value = {
     ...state,
@@ -398,14 +514,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     addProgressReport,
     addGroup, deleteGroup,
     updatePayment, markPaymentPaid,
-    resetToDefaults,
+    resetToDefaults, refresh,
     toasts, showToast, removeToast,
   };
 
   return (
     <DataContext.Provider value={value}>
       {children}
-      {/* Toast container */}
       <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => {
           const Icon = t.type === "success" ? CheckCircle2 : t.type === "error" ? XCircle : Info;
@@ -413,11 +528,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             <div
               key={t.id}
               className={`pointer-events-auto px-4 py-3 rounded-xl shadow-xl text-white text-sm font-medium flex items-center gap-2.5 min-w-[260px] max-w-md animate-in slide-in-from-bottom-2 fade-in duration-200 ${
-                t.type === "success"
-                  ? "bg-emerald-600"
-                  : t.type === "error"
-                  ? "bg-red-600"
-                  : "bg-slate-800"
+                t.type === "success" ? "bg-emerald-600" : t.type === "error" ? "bg-red-600" : "bg-slate-800"
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -447,4 +558,3 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     </DataContext.Provider>
   );
 }
-

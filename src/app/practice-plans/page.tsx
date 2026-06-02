@@ -5,6 +5,7 @@ import { useData } from "@/contexts/DataContext";
 import RouteGuard from "@/components/RouteGuard";
 import { DEMO_DRILLS, STAGE_INFO } from "@/lib/mockData";
 import { Sparkles, Clock, Users, Target, Plus, ChevronRight, X } from "lucide-react";
+import Link from "next/link";
 import { cn, stageBgClass, stageTextClass } from "@/lib/utils";
 import type { SkillStage } from "@/lib/types";
 
@@ -111,12 +112,12 @@ export default function PracticePlansPage() {
             <p className="text-sm text-slate-500">Build sessions with drills and games</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAiOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium border border-purple-100 hover:bg-purple-100"
+            <Link
+              href="/practice-plans/new"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-tennis-600 to-emerald-600 text-white rounded-lg text-xs font-medium hover:shadow-lg"
             >
-              <Sparkles className="w-4 h-4" /> AI Plan
-            </button>
+              <Sparkles className="w-4 h-4" /> Generate with AI
+            </Link>
             <button
               onClick={openModal}
               className="flex items-center gap-1.5 px-3 py-2 bg-tennis-600 text-white rounded-lg text-xs font-medium hover:bg-tennis-700"

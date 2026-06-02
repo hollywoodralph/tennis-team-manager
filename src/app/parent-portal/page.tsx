@@ -20,7 +20,7 @@ import { BADGE_DEFINITIONS } from "@/lib/types";
 export default function ParentPortalPage() {
   const { user } = useAuth();
   const { players, progressReports, playerBadges, sessions, updatePlayer } = useData();
-  const childIds = user?.child_ids || ["player-1"];
+  const childIds = user?.childIds || ["player-1"];
   const children = players.filter((p) => childIds.includes(p.id));
 
   const [activeChildId, setActiveChildId] = useState(childIds[0] || "");

@@ -64,7 +64,7 @@ export default function RouteGuard({ allowedRoles, requireParentChild, children 
     );
   }
 
-  if (requireParentChild && user.role === "parent" && (!user.child_ids || user.child_ids.length === 0)) {
+  if (requireParentChild && user.role === "parent" && (!user.childIds || user.childIds.length === 0)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center max-w-sm px-4">

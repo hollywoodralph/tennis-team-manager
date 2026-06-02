@@ -82,7 +82,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-            <p className="text-sm text-slate-500">Hello, {user?.full_name} 👋</p>
+            <p className="text-sm text-slate-500">Hello, {user?.fullName} 👋</p>
           </div>
           <div className="flex items-center gap-3">
             <Link
