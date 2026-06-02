@@ -1,6 +1,13 @@
-// Demo data seeding — call once via POST /api/seed
+// Demo data seeding — POST /api/seed
 // Creates a "demo" tenant with 4 users (admin/coach/parent/assistant), groups,
 // players, sessions, assessments, badges, and payments.
+//
+// PRODUCTION SAFETY (added 2026-06-01):
+//   - In production, requires either:
+//     (a) header `x-seed-secret: $SEED_SECRET` (set in env), OR
+//     (b) body `{ confirm: "I understand this will seed demo data" }`
+//   - In development, runs freely for convenience.
+//   - Always logs the request to stderr for audit.
 import { NextRequest, NextResponse } from "next/server";
 import { sql, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
@@ -8,6 +15,32 @@ import { hashPassword } from "@/lib/auth/session";
 import { BADGE_DEFINITIONS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const SEED_CONFIRM_PHRASE = "I understand this will seed demo data";
+
+function checkSeedAuth(req: NextRequest, body: any): { ok: boolean; reason?: string } {
+  const isProduction = process.env.NODE_ENV === "production";
+  if (!isProduction) return { ok: true };
+
+  // Option A: shared secret header
+  const expected = process.env.SEED_SECRET;
+  if (expected) {
+    const provided = req.headers.get("x-seed-secret");
+    if (provided === expected) return { ok: true };
+  }
+
+  // Option B: explicit body confirmation phrase
+  if (body?.confirm === SEED_CONFIRM_PHRASE) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    reason:
+      "Seeding in production requires header `x-seed-secret: $SEED_SECRET` " +
+      `or body { confirm: "${SEED_CONFIRM_PHRASE}" }.`,
+  };
+}
 
 const DEMO_PASSWORD = "password";
 
@@ -43,6 +76,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const reset = body?.reset === true;
 
+    // Production safety gate
+    const auth = checkSeedAuth(req, body);
+    if (!auth.ok) {
+      console.warn(`[seed] blocked in production: ${req.headers.get(\"x-forwarded-for\") || \"unknown\"}`);
+      return NextResponse.json({ error: auth.reason }, { status: 403 });
+    }
+
+    console.log(`[seed] running (reset=${reset}, nodeEnv=${process.env.NODE_ENV})`);
     const db = getDb();
 
     // Check if demo tenant already exists
