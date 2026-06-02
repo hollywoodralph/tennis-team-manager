@@ -278,10 +278,12 @@ export const messageThreadMembers = pgTable("message_thread_members", {
 export const messages = pgTable("messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   threadId: uuid("thread_id").references(() => messageThreads.id, { onDelete: "cascade" }).notNull(),
-  senderId: uuid("sender_id").references(() => users.id).notNull(),
+  senderId: uuid("sender_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   readBy: jsonb("read_by").$type<string[]>().default([]),
+  // Reactions: { emoji: [userId, ...] }, e.g. { "👍": ["u1","u2"], "❤️": ["u3"] }
+  reactions: jsonb("reactions").$type<Record<string, string[]>>().default({}),
 });
 
 /* ----------------------------------------------------------------- */

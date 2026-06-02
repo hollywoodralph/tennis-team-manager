@@ -8,6 +8,7 @@ import { requireAuth, handleApiError } from "@/lib/api/helpers";
 import { ollamaChatJSON } from "@/lib/ai/ollama";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // 5 min for AI generation
 
 const generateSchema = z.object({
   stage: z.enum(["red", "orange", "green", "yellow"]),
@@ -124,7 +125,7 @@ Requirements:
     }>([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
-    ], { temperature: 0.2, maxTokens: 3000 });
+    ], { temperature: 0.2, maxTokens: 6000 });
 
     const finalTitle = title || plan.title;
 

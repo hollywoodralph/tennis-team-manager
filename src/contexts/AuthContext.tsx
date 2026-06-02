@@ -27,8 +27,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load user from /api/auth/me on mount
+  // Load user from /api/auth/me on mount (or dev user if bypass is enabled)
   useEffect(() => {
+    const devMode = process.env.NEXT_PUBLIC_ALLOW_DEV_AUTH === "1";
+    if (devMode) {
+      // Pick which dev user to be (coach or parent), based on a query param so the same
+      // browser can switch roles for testing. Defaults to coach.
+      const params = new URLSearchParams(window.location.search);
+      const who = params.get("as") || "coach";
+      const devUser: AuthUser = {
+        id: `dev-${who}`,
+        email: `${who}@dev.local`,
+        fullName: who === "coach" ? "Coach Ralph" : who === "parent" ? "Parent Mia" : "Dev Admin",
+        role: who as any,
+        tenantId: "dev-tenant",
+        childIds: who === "parent" ? ["dev-player-1"] : [],
+      };
+      setUser(devUser);
+      setIsLoading(false);
+      return;
+    }
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
