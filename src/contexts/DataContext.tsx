@@ -79,6 +79,29 @@ function extractData<T>(apiResponse: any, fallback: T): T {
   return fallback;
 }
 
+// Convert API camelCase payloads to snake_case to match the existing
+// page code + mockData.ts shape. Without this, the production app shows
+// "Cannot read properties of undefined" on any field accessed in snake_case
+// (e.g. player.experience_level, player.first_name). Applied once at fetch
+// time so pages don't need to change.
+function camelToSnakeKey(k: string): string {
+  // Skip keys that are already snake_case or all-lowercase (id, url, etc.)
+  if (!/[A-Z]/.test(k)) return k;
+  return k.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
+}
+
+function normalizeKeys<T = any>(value: any): T {
+  if (Array.isArray(value)) return value.map(normalizeKeys) as any;
+  if (value && typeof value === "object" && value.constructor === Object) {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[camelToSnakeKey(k)] = normalizeKeys(v);
+    }
+    return out as any;
+  }
+  return value;
+}
+
 function loadState(): DataState {
   if (typeof window === "undefined") return DEFAULT_STATE;
   try {
@@ -205,13 +228,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setUsingApi(true);
           setState((prev) => ({
             ...prev,
-            players: p?.players || prev.players,
-            sessions: s?.sessions || prev.sessions,
-            attendance: a?.records || prev.attendance,
-            assessments: as?.assessments || prev.assessments,
-            announcements: an?.announcements || prev.announcements,
-            playerBadges: b?.awarded || prev.playerBadges,
-            payments: pay?.payments || prev.payments,
+            players: normalizeKeys(p?.players) || prev.players,
+            sessions: normalizeKeys(s?.sessions) || prev.sessions,
+            attendance: normalizeKeys(a?.records) || prev.attendance,
+            assessments: normalizeKeys(as?.assessments) || prev.assessments,
+            announcements: normalizeKeys(an?.announcements) || prev.announcements,
+            playerBadges: normalizeKeys(b?.awarded) || prev.playerBadges,
+            payments: normalizeKeys(pay?.payments) || prev.payments,
           }));
         }
       } catch {}
