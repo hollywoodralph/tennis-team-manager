@@ -13,6 +13,8 @@ import { sql, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { hashPassword } from "@/lib/auth/session";
 import { BADGE_DEFINITIONS } from "@/lib/types";
+import fs from "node:fs";
+import path from "node:path";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +87,31 @@ export async function POST(req: NextRequest) {
 
     console.log(`[seed] running (reset=${reset}, nodeEnv=${process.env.NODE_ENV})`);
     const db = getDb();
+
+    // Run schema migration if not yet applied (idempotent — uses IF NOT EXISTS)
+    const migrationFile = path.join(process.cwd(), "src/db/migrations/0000_initial.sql");
+    if (fs.existsSync(migrationFile)) {
+      const ddl = fs.readFileSync(migrationFile, "utf8");
+      // Split on the drizzle statement-breakpoint marker and run each statement
+      const statements = ddl
+        .split("--> statement-breakpoint")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      console.log(`[seed] applying migration (${statements.length} statements)`);
+      for (const stmt of statements) {
+        try {
+          await db.execute(sql.raw(stmt));
+        } catch (e: any) {
+          // Ignore "already exists" errors so re-running is idempotent
+          if (!String(e?.message || "").match(/already exists|duplicate/i)) {
+            console.error(`[seed] migration statement failed:`, e?.message);
+            throw e;
+          }
+        }
+      }
+    } else {
+      console.warn(`[seed] no migration file at ${migrationFile}, skipping DDL`);
+    }
 
     // Check if demo tenant already exists
     const existing = await db
