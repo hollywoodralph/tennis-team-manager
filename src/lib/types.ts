@@ -209,6 +209,12 @@ export interface AppSettings {
   consent_medical_text?: string;
 }
 
+export interface PaymentRecord {
+  monthlyFee: number;
+  paid: boolean;
+  lastPaidDate: string | null;
+}
+
 export interface DashboardStats {
   total_players: number;
   active_players: number;

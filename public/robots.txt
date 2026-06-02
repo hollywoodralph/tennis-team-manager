@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://tennis.photogralph.com/sitemap.xml

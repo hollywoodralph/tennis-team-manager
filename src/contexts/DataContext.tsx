@@ -1,14 +1,16 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { CheckCircle2, XCircle, Info, Undo2 } from "lucide-react";
 import {
   Player, Group, Session, AttendanceRecord, SkillAssessment,
   Announcement, PlayerBadge, Badge, ProgressReport, AppSettings,
+  PaymentRecord,
 } from "@/lib/types";
 import {
   DEMO_PLAYERS, DEMO_GROUPS, DEMO_SESSIONS, DEMO_ATTENDANCE,
   DEMO_ASSESSMENTS, DEMO_ANNOUNCEMENTS, DEMO_PLAYER_BADGES,
-  DEMO_PROGRESS_REPORTS, BADGE_DEFINITIONS,
+  DEMO_PROGRESS_REPORTS, BADGE_DEFINITIONS, DEMO_PAYMENTS,
 } from "@/lib/mockData";
 
 /* ------------------------------------------------------------------ */
@@ -25,6 +27,7 @@ export interface DataState {
   playerBadges: PlayerBadge[];
   progressReports: ProgressReport[];
   settings: AppSettings;
+  payments: Record<string, PaymentRecord>;
 }
 
 export interface DataActions {
@@ -52,6 +55,9 @@ export interface DataActions {
   /* Groups */
   addGroup: (group: Omit<Group, "id">) => Group;
   deleteGroup: (id: string) => void;
+  /* Payments */
+  updatePayment: (playerId: string, record: PaymentRecord) => void;
+  markPaymentPaid: (playerId: string, monthlyFee: number) => void;
   /* Reset */
   resetToDefaults: () => void;
 }
@@ -60,11 +66,15 @@ interface ToastMessage {
   id: string;
   message: string;
   type: "success" | "error" | "info";
+  undo?: {
+    label: string;
+    onUndo: () => void;
+  };
 }
 
 interface ToastCtx {
   toasts: ToastMessage[];
-  showToast: (message: string, type?: "success" | "error" | "info") => void;
+  showToast: (message: string, type?: "success" | "error" | "info", undo?: ToastMessage["undo"]) => void;
   removeToast: (id: string) => void;
 }
 
@@ -105,6 +115,7 @@ const DEFAULT_STATE: DataState = {
   playerBadges: DEMO_PLAYER_BADGES,
   progressReports: DEMO_PROGRESS_REPORTS,
   settings: DEFAULT_SETTINGS,
+  payments: DEMO_PAYMENTS,
 };
 
 function loadState(): DataState {
@@ -123,6 +134,7 @@ function loadState(): DataState {
       playerBadges: parsed.playerBadges ?? DEFAULT_STATE.playerBadges,
       progressReports: parsed.progressReports ?? DEFAULT_STATE.progressReports,
       settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
+      payments: parsed.payments ?? DEFAULT_STATE.payments,
     };
   } catch {
     return DEFAULT_STATE;
@@ -160,16 +172,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [state]);
 
   /* Toast helpers */
-  const showToast = useCallback((message: string, type: ToastMessage["type"] = "info") => {
-    const id = genId("toast");
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
+  const showToast = useCallback(
+    (message: string, type: ToastMessage["type"] = "info", undo?: ToastMessage["undo"]) => {
+      const id = genId("toast");
+      setToasts((prev) => [...prev, { id, message, type, undo }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, undo ? 6000 : 4000);
+    },
+    []
+  );
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  /* Restore a deleted entity (used by Undo button) */
+  const restoreSnapshot = useCallback((snapshot: Partial<DataState>) => {
+    setState((prev) => ({ ...prev, ...snapshot }));
   }, []);
 
   /* --- Players --- */
@@ -194,6 +214,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [showToast]);
 
   const deletePlayer = useCallback((id: string) => {
+    const snapshot = {
+      players: state.players,
+      attendance: state.attendance,
+      assessments: state.assessments,
+      playerBadges: state.playerBadges,
+      progressReports: state.progressReports,
+    };
     setState((prev) => ({
       ...prev,
       players: prev.players.filter((p) => p.id !== id),
@@ -202,8 +229,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       playerBadges: prev.playerBadges.filter((b) => b.player_id !== id),
       progressReports: prev.progressReports.filter((r) => r.player_id !== id),
     }));
-    showToast("Player removed from roster", "info");
-  }, [showToast]);
+    const player = state.players.find((p) => p.id === id);
+    const name = player ? `${player.first_name} ${player.last_name}` : "Player";
+    showToast(`${name} removed from roster`, "info", {
+      label: "Undo",
+      onUndo: () => restoreSnapshot(snapshot),
+    });
+  }, [showToast, state.players, state.attendance, state.assessments, state.playerBadges, state.progressReports, restoreSnapshot]);
 
   /* --- Sessions --- */
   const addSession = useCallback((session: Omit<Session, "id" | "created_at">) => {
@@ -226,13 +258,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [showToast]);
 
   const deleteSession = useCallback((id: string) => {
+    const snapshot = { sessions: state.sessions, attendance: state.attendance };
     setState((prev) => ({
       ...prev,
       sessions: prev.sessions.filter((s) => s.id !== id),
       attendance: prev.attendance.filter((a) => a.session_id !== id),
     }));
-    showToast("Session deleted", "info");
-  }, [showToast]);
+    showToast("Session deleted", "info", {
+      label: "Undo",
+      onUndo: () => restoreSnapshot(snapshot),
+    });
+  }, [showToast, state.sessions, state.attendance, restoreSnapshot]);
 
   /* --- Attendance --- */
   const saveAttendance = useCallback((records: Omit<AttendanceRecord, "id" | "created_at">[]) => {
@@ -320,8 +356,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [showToast]);
 
   const deleteGroup = useCallback((id: string) => {
+    const snapshot = { groups: state.groups };
     setState((prev) => ({ ...prev, groups: prev.groups.filter((g) => g.id !== id) }));
-    showToast("Group deleted", "info");
+    showToast("Group deleted", "info", {
+      label: "Undo",
+      onUndo: () => restoreSnapshot(snapshot),
+    });
+  }, [showToast, state.groups, restoreSnapshot]);
+
+  /* --- Payments --- */
+  const updatePayment = useCallback((playerId: string, record: PaymentRecord) => {
+    setState((prev) => ({ ...prev, payments: { ...prev.payments, [playerId]: record } }));
+  }, []);
+
+  const markPaymentPaid = useCallback((playerId: string, monthlyFee: number) => {
+    setState((prev) => ({
+      ...prev,
+      payments: {
+        ...prev.payments,
+        [playerId]: { monthlyFee, paid: true, lastPaidDate: new Date().toISOString().split("T")[0] },
+      },
+    }));
+    showToast("Payment marked as paid", "success");
   }, [showToast]);
 
   /* --- Reset --- */
@@ -341,6 +397,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateSettings,
     addProgressReport,
     addGroup, deleteGroup,
+    updatePayment, markPaymentPaid,
     resetToDefaults,
     toasts, showToast, removeToast,
   };
@@ -349,19 +406,43 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     <DataContext.Provider value={value}>
       {children}
       {/* Toast container */}
-      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`px-4 py-3 rounded-lg shadow-lg text-white font-medium text-sm flex items-center gap-2 animate-in slide-in-from-bottom-2 ${
-              t.type === "success" ? "bg-green-600" : t.type === "error" ? "bg-red-600" : "bg-slate-700"
-            }`}
-          >
-            {t.type === "success" ? "✅" : t.type === "error" ? "❌" : "ℹ️"}
-            {t.message}
-            <button onClick={() => removeToast(t.id)} className="ml-2 opacity-70 hover:opacity-100">×</button>
-          </div>
-        ))}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => {
+          const Icon = t.type === "success" ? CheckCircle2 : t.type === "error" ? XCircle : Info;
+          return (
+            <div
+              key={t.id}
+              className={`pointer-events-auto px-4 py-3 rounded-xl shadow-xl text-white text-sm font-medium flex items-center gap-2.5 min-w-[260px] max-w-md animate-in slide-in-from-bottom-2 fade-in duration-200 ${
+                t.type === "success"
+                  ? "bg-emerald-600"
+                  : t.type === "error"
+                  ? "bg-red-600"
+                  : "bg-slate-800"
+              }`}
+            >
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="flex-1">{t.message}</span>
+              {t.undo && (
+                <button
+                  onClick={() => {
+                    t.undo!.onUndo();
+                    removeToast(t.id);
+                  }}
+                  className="ml-1 px-2 py-0.5 rounded bg-white/20 hover:bg-white/30 text-xs font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <Undo2 className="w-3 h-3" /> {t.undo.label}
+                </button>
+              )}
+              <button
+                onClick={() => removeToast(t.id)}
+                aria-label="Dismiss"
+                className="ml-1 opacity-70 hover:opacity-100 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
       </div>
     </DataContext.Provider>
   );

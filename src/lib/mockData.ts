@@ -1,5 +1,5 @@
 // Mock data for dev/demo mode
-import { Player, Group, Session, AttendanceRecord, SkillAssessment, ProgressReport, Drill, PracticePlan, Announcement, PlayerBadge, SKILL_DEFINITIONS, BADGE_DEFINITIONS, DashboardStats } from "./types";
+import { Player, Group, Session, AttendanceRecord, SkillAssessment, ProgressReport, Drill, PracticePlan, Announcement, PlayerBadge, PaymentRecord, SKILL_DEFINITIONS, BADGE_DEFINITIONS, DashboardStats } from "./types";
 
 export { SKILL_DEFINITIONS, BADGE_DEFINITIONS, STAGE_INFO } from "./types";
 
@@ -440,6 +440,22 @@ export const DEMO_DASHBOARD_STATS: DashboardStats = {
   recent_assessments: 5,
   stage_distribution: { red: 2, orange: 2, green: 2, yellow: 2 },
 };
+
+const STAGE_FEE: Record<string, number> = { red: 40, orange: 50, green: 60, yellow: 70 };
+
+export const DEMO_PAYMENTS: Record<string, PaymentRecord> = Object.fromEntries(
+  DEMO_PLAYERS.map((p, i) => {
+    // Mix of paid and unpaid, with varied last-paid dates
+    const paid = i % 3 !== 0; // ~2/3 paid
+    const lastPaidDate = paid
+      ? new Date(Date.now() - (i + 1) * 7 * 86400000).toISOString().split("T")[0]
+      : null;
+    return [
+      p.id,
+      { monthlyFee: STAGE_FEE[p.skill_stage] ?? 50, paid, lastPaidDate },
+    ];
+  })
+);
 
 // Simple in-memory store for demo operations
 let _players = [...DEMO_PLAYERS];

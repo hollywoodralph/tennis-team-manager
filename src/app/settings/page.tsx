@@ -1,14 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { DemoNav } from "@/components/layout/DemoNav";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import RouteGuard from "@/components/RouteGuard";
-import { Settings, Building2, MapPin, Palette } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Settings, Building2, MapPin, Palette, Download, Upload, RotateCcw, Database } from "lucide-react";
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const { settings, updateSettings, players, updatePlayer, showToast } = useData();
+  const { settings, updateSettings, players, updatePlayer, showToast, resetToDefaults } = useData();
   const [orgName, setOrgName] = useState(settings.organization_name);
   const [locations, setLocations] = useState<string[]>([...settings.locations]);
   const [photoText, setPhotoText] = useState(settings.consent_photo_text || "");
@@ -16,6 +17,8 @@ export default function SettingsPage() {
   const [medicalText, setMedicalText] = useState(settings.consent_medical_text || "");
 
   const [newLoc, setNewLoc] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canEdit = user?.role === "admin" || user?.role === "coach";
 
@@ -44,6 +47,82 @@ export default function SettingsPage() {
       updatePlayer(p.id, { [field]: value });
     });
     showToast(`Updated ${field.replace("_", " ")} for all players`, "success");
+  };
+
+  const exportJSON = () => {
+    const data = {
+      players: players,
+      version: 1,
+      exported_at: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tennis-roster-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Roster exported as JSON", "success");
+  };
+
+  const exportCSV = () => {
+    const headers = [
+      "ID", "First Name", "Last Name", "Preferred Name", "DOB", "Age", "Stage",
+      "Experience", "Dominant Hand", "Status", "Group", "Photo Consent", "Video Consent",
+      "Participation Consent", "Allergies", "Medical Notes", "Coach Notes",
+    ];
+    const rows = players.map((p) => [
+      p.id,
+      p.first_name,
+      p.last_name,
+      p.preferred_name || "",
+      p.date_of_birth,
+      p.age,
+      p.skill_stage,
+      p.experience_level,
+      p.dominant_hand,
+      p.status,
+      p.group_id || "",
+      p.photo_consent ? "yes" : "no",
+      p.video_consent ? "yes" : "no",
+      p.participation_consent ? "yes" : "no",
+      (p.allergies || "").replace(/"/g, '""'),
+      (p.medical_notes || "").replace(/"/g, '""'),
+      (p.coach_notes || "").replace(/"/g, '""'),
+    ]);
+    const csv = [headers, ...rows]
+      .map((r) => r.map((c) => `"${c}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tennis-roster-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Roster exported as CSV", "success");
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (!data.players || !Array.isArray(data.players)) {
+          showToast("Invalid file format", "error");
+          return;
+        }
+        // Show a confirmation toast with count
+        showToast(`Import ready: ${data.players.length} players in file. (Demo: import preview only)`, "info");
+      } catch {
+        showToast("Failed to parse JSON", "error");
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
@@ -195,7 +274,69 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {/* Data Management */}
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mt-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Database className="w-4 h-4 text-tennis-500" />
+            <h2 className="text-sm font-semibold text-slate-700">Data Management</h2>
+          </div>
+          <p className="text-xs text-slate-500 mb-4">
+            Export your roster for backup, compliance, or to migrate to another system. Your data lives in your browser only.
+          </p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              onClick={exportJSON}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-100 flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" /> Export JSON
+            </button>
+            <button
+              onClick={exportCSV}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-100 flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-100 flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" /> Import JSON
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json"
+              onChange={handleImport}
+              className="hidden"
+            />
+          </div>
+          {canEdit && (
+            <div className="pt-3 border-t border-slate-50">
+              <button
+                onClick={() => setResetOpen(true)}
+                className="px-3 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Reset to Demo Data
+              </button>
+              <p className="text-[11px] text-slate-400 mt-1.5">This will discard all your changes and restore the original demo data.</p>
+            </div>
+          )}
+        </div>
       </main>
+
+      <ConfirmDialog
+        open={resetOpen}
+        onClose={() => setResetOpen(false)}
+        onConfirm={() => {
+          resetToDefaults();
+          setResetOpen(false);
+        }}
+        title="Reset all data?"
+        message="This will permanently discard all players, sessions, assessments, badges, and payments you've added. The app will return to its original demo state. This cannot be undone."
+        confirmLabel="Reset Everything"
+        variant="danger"
+      />
     </div>
     </RouteGuard>
   );
