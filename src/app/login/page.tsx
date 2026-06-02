@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
@@ -15,7 +15,18 @@ const DEMO_ACCOUNTS = [
   { email: "assistant@photogralph.com", label: "Assistant", color: "bg-purple-50 border-purple-200 hover:border-purple-400" },
 ];
 
-export default function LoginPage() {
+export default function LoginPageWrapper() {
+  // Next.js 16 requires useSearchParams() to be inside a Suspense boundary
+  // because the page can be statically prerendered. We wrap the inner page
+  // so the rest of the app can prerender /login statically.
+  return (
+    <Suspense fallback={null}>
+      <LoginPage />
+    </Suspense>
+  );
+}
+
+function LoginPage() {
   const { login, user } = useAuth();
   const { showToast } = useData();
   const router = useRouter();
