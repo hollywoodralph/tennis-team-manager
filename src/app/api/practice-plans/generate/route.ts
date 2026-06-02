@@ -39,9 +39,21 @@ const THEME_INFO: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  const user = await requireAuth();
-  if (user instanceof NextResponse) return user;
-  if (user.role === "parent" || user.role === "viewer") {
+  // DEV-ONLY bypass: when ALLOW_DEV_PLAN=1, accept any caller as a "coach"
+  // without a DB session. Used for testing the AI generator without
+  // setting up a real backend. NEVER enable in production.
+  let user: any = process.env.ALLOW_DEV_PLAN === "1" ? {
+    id: "dev-user",
+    email: "dev@local",
+    fullName: "Dev User",
+    role: "admin",
+    tenantId: "dev-tenant",
+  } : null;
+  if (!user) {
+    user = await requireAuth() as any;
+    if (user instanceof NextResponse) return user;
+  }
+  if (process.env.ALLOW_DEV_PLAN !== "1" && user && (user.role === "parent" || user.role === "viewer")) {
     return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   }
   try {
@@ -61,7 +73,9 @@ export async function POST(req: NextRequest) {
     const stageInfo = STAGE_INFO[stage];
     const themeInfo = THEME_INFO[theme] || THEME_INFO.fundamentals;
 
-    const systemPrompt = `You are an expert youth tennis coach with 20+ years of experience developing players ages 6-14. You design fun, engaging, age-appropriate practice sessions that focus on fundamentals while keeping kids moving and motivated. Your plans are specific, actionable, and include real coaching cues.`;
+    const systemPrompt = `You are an expert youth tennis coach with 20+ years of experience developing players ages 6-14. You design fun, engaging, age-appropriate practice sessions that focus on fundamentals while keeping kids moving and motivated. Your plans are specific, actionable, and include real coaching cues.
+
+IMPORTANT: Output your JSON directly in the assistant message content. Do NOT wrap it in a "thinking" block or prefix it with analysis. Return ONLY the JSON object, with no prose before or after it.`;
 
     const userPrompt = `Design a ${durationMinutes}-minute tennis practice plan for ${numPlayers} players on ${courts} court(s).
 
@@ -110,11 +124,11 @@ Requirements:
     }>([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
-    ], { temperature: 0.7, maxTokens: 2500 });
+    ], { temperature: 0.2, maxTokens: 3000 });
 
     const finalTitle = title || plan.title;
 
-    if (savePlan) {
+    if (savePlan && process.env.ALLOW_DEV_PLAN !== "1") {
       const db = getDb();
       const [row] = await db.insert(schema.practicePlans).values({
         tenantId: user.tenantId!,
