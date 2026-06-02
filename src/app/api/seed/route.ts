@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     // Production safety gate
     const auth = checkSeedAuth(req, body);
     if (!auth.ok) {
-      console.warn(`[seed] blocked in production: ${req.headers.get(\"x-forwarded-for\") || \"unknown\"}`);
+      console.warn(`[seed] blocked in production: ${req.headers.get("x-forwarded-for") || "unknown"}`);
       return NextResponse.json({ error: auth.reason }, { status: 403 });
     }
 
