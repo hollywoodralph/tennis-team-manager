@@ -110,7 +110,7 @@ export default function PaymentsPage() {
   const sendReminder = (playerId: string) => {
     const player = players.find((p) => p.id === playerId);
     if (!player) return;
-    const guardian = player.guardians.find((g) => g.is_primary) ?? player.guardians[0];
+    const guardian = (player.guardians ?? []).find((g) => g.is_primary) ?? (player.guardians ?? [])[0];
     setReminder({ playerId, playerName: `${player.first_name} ${player.last_name}`, guardianEmail: guardian?.email ?? null });
   };
 

@@ -160,7 +160,7 @@ export default function RosterPage() {
                     )}
                   </div>
                   <div className="mt-3 pt-3 border-t border-slate-50 text-xs text-slate-500 truncate">
-                    👤 {player.guardians[0]?.full_name || "No guardian on file"}
+                    👤 {player.guardians?.[0]?.full_name || "No guardian on file"}
                   </div>
                 </Link>
               ))}
